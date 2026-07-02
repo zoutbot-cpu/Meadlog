@@ -347,6 +347,64 @@ table.ing-table td.amt{
 .drive-actions{ display:flex; gap:8px; }
 .drive-actions button{ padding:6px 12px; font-size:0.8rem; }
 
+.tag .abv-pill{
+  display:inline-block;
+  margin-top:8px;
+  font-size:0.72rem;
+  font-family:'IBM Plex Mono',monospace;
+  color:#7fae5c;
+  background:rgba(127,174,92,0.12);
+  border:1px solid rgba(127,174,92,0.3);
+  padding:2px 8px;
+  border-radius:20px;
+}
+.quick-note-btn{
+  background:transparent;
+  border:1px solid var(--line);
+  color:var(--text-muted);
+  font-size:0.75rem;
+  padding:5px 10px;
+  margin-top:10px;
+  width:100%;
+}
+.quick-note-btn:hover{ color:var(--honey); border-color:var(--honey-deep); }
+
+.note-gravity{
+  font-family:'IBM Plex Mono',monospace;
+  color:#7fae5c;
+  margin-left:8px;
+}
+
+.gravity-chart-svg{ width:100%; height:auto; display:block; }
+.chart-caption{
+  font-size:0.75rem;
+  color:var(--text-muted);
+  margin-top:8px;
+  display:flex;
+  justify-content:space-between;
+}
+
+.toast{
+  position:fixed;
+  bottom:24px;
+  left:50%;
+  transform:translateX(-50%) translateY(20px);
+  background:var(--surface-2);
+  border:1px solid var(--honey-deep);
+  color:var(--text);
+  padding:10px 20px;
+  border-radius:30px;
+  font-size:0.85rem;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .2s ease, transform .2s ease;
+  z-index:100;
+}
+.toast.show{
+  opacity:1;
+  transform:translateX(-50%) translateY(0);
+}
+
 /* ---------- Mobile ---------- */
 @media (max-width: 640px){
   body{ padding:16px 12px 90px; }
@@ -493,14 +551,18 @@ table.ing-table td.amt{
           <input type="text" class="og-input" id="f-og" placeholder="1.098">
         </div>
         <div class="field">
-          <label>Status</label>
-          <select id="f-status">
-            <option>Fermenting</option>
-            <option>Aging</option>
-            <option>Bottled</option>
-            <option>Finished</option>
-          </select>
+          <label>Final gravity (optional)</label>
+          <input type="text" class="og-input" id="f-fg" placeholder="1.010">
         </div>
+      </div>
+      <div class="field">
+        <label>Status</label>
+        <select id="f-status">
+          <option>Fermenting</option>
+          <option>Aging</option>
+          <option>Bottled</option>
+          <option>Finished</option>
+        </select>
       </div>
 
       <div class="field">
@@ -539,11 +601,24 @@ table.ing-table td.amt{
           <div class="val" id="d-og"></div>
           <div class="lbl">Starting Gravity</div>
         </div>
+        <div class="stat hidden" id="d-fg-stat">
+          <div class="val" id="d-fg"></div>
+          <div class="lbl">Final Gravity</div>
+        </div>
+        <div class="stat hidden" id="d-abv-stat">
+          <div class="val" id="d-abv"></div>
+          <div class="lbl">ABV</div>
+        </div>
         <div class="stat">
           <div class="val" id="d-date"></div>
           <div class="lbl">Date Started</div>
         </div>
       </div>
+
+      <section class="block hidden" id="d-chart-section">
+        <h3>Gravity Over Time</h3>
+        <div id="d-gravity-chart"></div>
+      </section>
 
       <section class="block">
         <h3>Ingredients</h3>
@@ -558,17 +633,20 @@ table.ing-table td.amt{
             <input type="date" id="note-date">
           </div>
           <div class="field" style="margin-bottom:0;">
-            <label>&nbsp;</label>
-            <button class="btn-primary" id="addNoteBtn" style="width:100%;">Add note</button>
+            <label>Gravity reading (optional)</label>
+            <input type="text" class="og-input" id="note-gravity" placeholder="1.032">
           </div>
         </div>
-        <textarea id="note-text" rows="3" placeholder="Racked to secondary, tastes dry but promising..." style="margin-bottom:14px;"></textarea>
+        <textarea id="note-text" rows="3" placeholder="Racked to secondary, tastes dry but promising..." style="margin-bottom:10px;"></textarea>
+        <button class="btn-primary" id="addNoteBtn" style="width:100%;margin-bottom:14px;">Add note</button>
         <div id="notesList"></div>
       </section>
     </div>
   </div>
 
 </div>
+
+<div id="toast" class="toast"></div>
 
 <script>
 const STORAGE_KEY = 'mead-batches';
@@ -605,6 +683,21 @@ function fmtDate(d){
   return dt.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
 }
 
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(()=> t.classList.remove('show'), 2200);
+}
+
+function calcAbv(og, fg){
+  const ogN = parseFloat(og), fgN = parseFloat(fg);
+  if(isNaN(ogN) || isNaN(fgN)) return null;
+  const abv = (ogN - fgN) * 131.25;
+  return abv > 0 ? abv : null;
+}
+
 async function loadBatches(){
   try{
     const res = await store.get(STORAGE_KEY);
@@ -618,6 +711,8 @@ async function loadBatches(){
 async function saveBatches(){
   try{
     await store.set(STORAGE_KEY, JSON.stringify(batches));
+    localStorage.setItem('mead-last-local-save', new Date().toISOString());
+    showToast('Saved');
     pushToDrive();
   }catch(e){
     console.error('Storage error', e);
@@ -644,18 +739,30 @@ function renderList(){
   batches.slice().sort((a,b)=> (b.dateStarted||'').localeCompare(a.dateStarted||'')).forEach(b=>{
     const card = document.createElement('div');
     card.className = 'tag';
+    const abv = calcAbv(b.og, b.fg);
     card.innerHTML = `
       <div class="hole"></div>
       <h3>${escapeHtml(b.name || 'Untitled batch')}</h3>
       <div class="recipe">${escapeHtml(b.recipe || 'No recipe noted')}</div>
       <span class="og-label">Starting Gravity</span>
       <div class="og">${escapeHtml(b.og || '—')}</div>
+      ${abv !== null ? `<span class="abv-pill">${abv.toFixed(1)}% ABV</span>` : ''}
       <div class="meta">
         <span>${fmtDate(b.dateStarted) || 'No date'}</span>
         <span class="status-pill">${escapeHtml(b.status || 'Fermenting')}</span>
       </div>
+      <button type="button" class="quick-note-btn" data-id="${b.id}">✎ Add note</button>
     `;
     card.addEventListener('click', ()=> openDetail(b.id));
+    card.querySelector('.quick-note-btn').addEventListener('click', (e)=>{
+      e.stopPropagation();
+      openDetail(b.id);
+      setTimeout(()=>{
+        const ta = document.getElementById('note-text');
+        ta.scrollIntoView({behavior:'smooth', block:'center'});
+        ta.focus();
+      }, 50);
+    });
     grid.appendChild(card);
   });
 }
@@ -672,6 +779,7 @@ function resetForm(){
   document.getElementById('f-recipe').value = '';
   document.getElementById('f-date').value = todayStr();
   document.getElementById('f-og').value = '';
+  document.getElementById('f-fg').value = '';
   document.getElementById('f-status').value = 'Fermenting';
   currentIngRows = [{name:'',amount:'',unit:''}];
   renderIngRows();
@@ -728,6 +836,7 @@ function openEditForm(id){
   document.getElementById('f-recipe').value = b.recipe || '';
   document.getElementById('f-date').value = b.dateStarted || todayStr();
   document.getElementById('f-og').value = b.og || '';
+  document.getElementById('f-fg').value = b.fg || '';
   document.getElementById('f-status').value = b.status || 'Fermenting';
   currentIngRows = b.ingredients && b.ingredients.length ? b.ingredients.map(x=>({...x})) : [{name:'',amount:'',unit:''}];
   renderIngRows();
@@ -746,6 +855,7 @@ async function saveBatch(){
     recipe: document.getElementById('f-recipe').value.trim(),
     dateStarted: document.getElementById('f-date').value,
     og: document.getElementById('f-og').value.trim(),
+    fg: document.getElementById('f-fg').value.trim(),
     status: document.getElementById('f-status').value,
     ingredients
   };
@@ -776,6 +886,25 @@ function openDetail(id){
   document.getElementById('d-og').textContent = b.og || '—';
   document.getElementById('d-date').textContent = fmtDate(b.dateStarted) || '—';
 
+  const fgStat = document.getElementById('d-fg-stat');
+  if(b.fg){
+    document.getElementById('d-fg').textContent = b.fg;
+    fgStat.classList.remove('hidden');
+  } else {
+    fgStat.classList.add('hidden');
+  }
+
+  const abvStat = document.getElementById('d-abv-stat');
+  const abv = calcAbv(b.og, b.fg);
+  if(abv !== null){
+    document.getElementById('d-abv').textContent = abv.toFixed(1) + '%';
+    abvStat.classList.remove('hidden');
+  } else {
+    abvStat.classList.add('hidden');
+  }
+
+  renderGravityChart(b);
+
   const table = document.getElementById('d-ing-table');
   table.innerHTML = '';
   if(!b.ingredients || b.ingredients.length===0){
@@ -790,9 +919,58 @@ function openDetail(id){
 
   document.getElementById('note-date').value = todayStr();
   document.getElementById('note-text').value = '';
+  document.getElementById('note-gravity').value = '';
   renderNotes(b);
 
   showView('detailView');
+}
+
+function renderGravityChart(b){
+  const section = document.getElementById('d-chart-section');
+  const container = document.getElementById('d-gravity-chart');
+  const points = [];
+  if(b.og && !isNaN(parseFloat(b.og)) && b.dateStarted){
+    points.push({ date: b.dateStarted, value: parseFloat(b.og) });
+  }
+  (b.notes || []).forEach(n=>{
+    if(n.gravity && !isNaN(parseFloat(n.gravity))){
+      points.push({ date: n.date, value: parseFloat(n.gravity) });
+    }
+  });
+  points.sort((a,c)=> a.date.localeCompare(c.date));
+
+  if(points.length < 2){
+    section.classList.add('hidden');
+    container.innerHTML = '';
+    return;
+  }
+  section.classList.remove('hidden');
+
+  const w = 600, h = 140, pad = 20;
+  const values = points.map(p=>p.value);
+  const min = Math.min(...values), max = Math.max(...values);
+  const range = (max - min) || 0.001;
+  const xStep = (w - pad*2) / (points.length - 1);
+
+  const coords = points.map((p,i)=>{
+    const x = pad + i * xStep;
+    const y = h - pad - ((p.value - min) / range) * (h - pad*2);
+    return { x, y, ...p };
+  });
+
+  const linePath = coords.map((c,i)=> (i===0?'M':'L') + c.x.toFixed(1) + ',' + c.y.toFixed(1)).join(' ');
+  const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="3.5" fill="var(--honey)" />`).join('');
+
+  container.innerHTML = `
+    <svg class="gravity-chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <path d="${linePath}" fill="none" stroke="var(--honey-deep)" stroke-width="2" />
+      ${dots}
+    </svg>
+    <div class="chart-caption">
+      <span>${fmtDate(points[0].date)} · ${points[0].value.toFixed(3)}</span>
+      <span>${fmtDate(points[points.length-1].date)} · ${points[points.length-1].value.toFixed(3)}</span>
+    </div>
+  `;
 }
 
 function renderNotes(b){
@@ -805,7 +983,8 @@ function renderNotes(b){
   b.notes.slice().sort((a,c)=> c.date.localeCompare(a.date)).forEach(n=>{
     const div = document.createElement('div');
     div.className = 'note';
-    div.innerHTML = `<div class="date">${fmtDate(n.date)}</div><p>${escapeHtml(n.text)}</p>`;
+    const gravityBadge = n.gravity ? `<span class="note-gravity">SG ${escapeHtml(n.gravity)}</span>` : '';
+    div.innerHTML = `<div class="date">${fmtDate(n.date)}${gravityBadge}</div><p>${escapeHtml(n.text)}</p>`;
     list.appendChild(div);
   });
 }
@@ -815,15 +994,20 @@ async function addNote(){
   if(!b) return;
   const date = document.getElementById('note-date').value || todayStr();
   const text = document.getElementById('note-text').value.trim();
+  const gravity = document.getElementById('note-gravity').value.trim();
   if(!text){
     alert('Write something in the note first.');
     return;
   }
   if(!b.notes) b.notes = [];
-  b.notes.push({ date, text });
+  const note = { date, text };
+  if(gravity) note.gravity = gravity;
+  b.notes.push(note);
   await saveBatches();
   document.getElementById('note-text').value = '';
+  document.getElementById('note-gravity').value = '';
   renderNotes(b);
+  renderGravityChart(b);
 }
 
 async function deleteBatch(){
@@ -956,23 +1140,33 @@ async function syncFromDrive(){
   if(!accessToken) return;
   try{
     const fileId = await getOrCreateFileId();
-    const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
-    const text = await res.text();
-    if(!text || !text.trim()) return;
-    const remoteBatches = JSON.parse(text);
-    if(batches.length === 0 && remoteBatches.length > 0){
+
+    const metaRes = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=modifiedTime`);
+    const meta = await metaRes.json();
+    const remoteModified = meta.modifiedTime ? new Date(meta.modifiedTime).getTime() : 0;
+    const localSavedRaw = localStorage.getItem('mead-last-local-save');
+    const localSaved = localSavedRaw ? new Date(localSavedRaw).getTime() : 0;
+
+    const contentRes = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
+    const text = await contentRes.text();
+    const remoteBatches = text && text.trim() ? JSON.parse(text) : [];
+
+    const sameData = JSON.stringify(remoteBatches) === JSON.stringify(batches);
+    if(sameData) return;
+
+    if(remoteBatches.length === 0 && batches.length > 0){
+      await pushToDrive();
+      return;
+    }
+
+    if(batches.length === 0 || remoteModified > localSaved){
       batches = remoteBatches;
       await store.set(STORAGE_KEY, JSON.stringify(batches));
+      localStorage.setItem('mead-last-local-save', new Date().toISOString());
       renderList();
-    } else if(remoteBatches.length > 0 && JSON.stringify(remoteBatches) !== JSON.stringify(batches)){
-      const useCloud = confirm('Your Google Drive backup has different data than this device. Click OK to use the Drive version, or Cancel to keep this device\'s data (and overwrite Drive with it).');
-      if(useCloud){
-        batches = remoteBatches;
-        await store.set(STORAGE_KEY, JSON.stringify(batches));
-        renderList();
-      } else {
-        await pushToDrive();
-      }
+      showToast('Synced newer data from Drive');
+    } else {
+      await pushToDrive();
     }
   }catch(e){
     console.error('Drive sync failed', e);
