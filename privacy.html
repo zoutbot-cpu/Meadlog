@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Mead Log</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&display=swap');
+
+:root{
+  --bg:#1c140f;
+  --surface:#271c14;
+  --text:#f3e8d6;
+  --text-muted:#b3a087;
+  --honey:#e3a23d;
+  --honey-deep:#c97f1e;
+  --line:#4a3826;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Inter',sans-serif;
+  line-height:1.6;
+  padding:40px 20px 80px;
+}
+.wrap{ max-width:680px; margin:0 auto; }
+h1{
+  font-family:'Fraunces',serif;
+  font-size:2rem;
+  margin-bottom:4px;
+}
+.updated{ color:var(--text-muted); font-size:0.85rem; margin-bottom:32px; }
+h2{
+  font-family:'Fraunces',serif;
+  font-size:1.25rem;
+  margin-top:36px;
+  border-bottom:1px solid var(--line);
+  padding-bottom:8px;
+}
+p, li{ color:var(--text); font-size:0.95rem; }
+ul{ padding-left:20px; }
+a{ color:var(--honey); }
+a:hover{ color:var(--honey-deep); }
+.back{
+  display:inline-block;
+  margin-bottom:24px;
+  color:var(--text-muted);
+  text-decoration:none;
+  font-size:0.9rem;
+}
+.back:hover{ color:var(--honey); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="./index.html">&larr; Back to Mead Log</a>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: July 2026</p>
+
+  <p>Mead Log is a personal mead-brewing logbook. This page explains what data the app touches and how it's used.</p>
+
+  <h2>What data the app accesses</h2>
+  <p>Mead Log stores the batch information you enter yourself: recipe names, gravity readings, ingredients, and notes. This data is:</p>
+  <ul>
+    <li>Saved in your browser's local storage by default, on the device you're using.</li>
+    <li>Optionally synced to your own Google Drive, if you choose to click "Connect Drive."</li>
+  </ul>
+
+  <h2>Google Drive access</h2>
+  <p>If you connect Google Drive, Mead Log requests the <code>drive.appdata</code> scope only. This is a narrow, Google-defined permission that lets an app read and write a single hidden folder tied specifically to that app — it does <strong>not</strong> grant access to any other files in your Drive, and nothing you store elsewhere in your Drive is visible to this app.</p>
+  <p>The only thing written to that folder is your own mead-batch data, as a single JSON file, so it can follow you across devices and browsers.</p>
+
+  <h2>What we don't do</h2>
+  <ul>
+    <li>We don't share, sell, or transmit your data to any third party.</li>
+    <li>We don't use analytics or tracking scripts.</li>
+    <li>We don't run ads.</li>
+    <li>We don't access, read, or store any other files in your Google Drive.</li>
+  </ul>
+
+  <h2>Revoking access</h2>
+  <p>You can disconnect Google Drive access at any time from your <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Google Account permissions page</a>. This immediately revokes Mead Log's access; your data stays in the app-specific Drive folder unless you also delete it there, or continues to live locally in your browser regardless.</p>
+
+  <h2>Local data</h2>
+  <p>Clearing your browser's site data/local storage for this page will remove any batches not also synced to Drive.</p>
+
+  <h2>Contact</h2>
+  <p>Questions or concerns about this app can be raised via the <a href="https://github.com/zoutbot-cpu/Meadlog/issues" target="_blank" rel="noopener">GitHub repository's issues page</a>.</p>
+</div>
+</body>
+</html>
