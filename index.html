@@ -358,6 +358,11 @@ table.ing-table td.amt{
   padding:2px 8px;
   border-radius:20px;
 }
+.tag .abv-pill.proj{
+  color:var(--honey);
+  background:rgba(227,162,61,0.12);
+  border-color:rgba(227,162,61,0.35);
+}
 .quick-note-btn{
   background:transparent;
   border:1px solid var(--line);
@@ -609,6 +614,10 @@ table.ing-table td.amt{
           <div class="val" id="d-abv"></div>
           <div class="lbl">ABV</div>
         </div>
+        <div class="stat hidden" id="d-proj-abv-stat">
+          <div class="val" id="d-proj-abv"></div>
+          <div class="lbl" id="d-proj-abv-label">Projected ABV (so far)</div>
+        </div>
         <div class="stat">
           <div class="val" id="d-date"></div>
           <div class="lbl">Date Started</div>
@@ -740,13 +749,27 @@ function renderList(){
     const card = document.createElement('div');
     card.className = 'tag';
     const abv = calcAbv(b.og, b.fg);
+    let abvPillHtml = '';
+    if(abv !== null){
+      abvPillHtml = `<span class="abv-pill">${abv.toFixed(1)}% ABV</span>`;
+    } else {
+      const points = getGravityPoints(b);
+      const fit = fitFermentationCurve(points);
+      if(fit){
+        const projAbv = calcAbv(b.og, fit.Gf);
+        if(projAbv !== null) abvPillHtml = `<span class="abv-pill proj">~${projAbv.toFixed(1)}% projected</span>`;
+      } else if(points.length >= 2){
+        const projAbv = calcAbv(b.og, points[points.length-1].value);
+        if(projAbv !== null) abvPillHtml = `<span class="abv-pill proj">~${projAbv.toFixed(1)}% so far</span>`;
+      }
+    }
     card.innerHTML = `
       <div class="hole"></div>
       <h3>${escapeHtml(b.name || 'Untitled batch')}</h3>
       <div class="recipe">${escapeHtml(b.recipe || 'No recipe noted')}</div>
       <span class="og-label">Starting Gravity</span>
       <div class="og">${escapeHtml(b.og || '—')}</div>
-      ${abv !== null ? `<span class="abv-pill">${abv.toFixed(1)}% ABV</span>` : ''}
+      ${abvPillHtml}
       <div class="meta">
         <span>${fmtDate(b.dateStarted) || 'No date'}</span>
         <span class="status-pill">${escapeHtml(b.status || 'Fermenting')}</span>
@@ -903,6 +926,33 @@ function openDetail(id){
     abvStat.classList.add('hidden');
   }
 
+  const projStat = document.getElementById('d-proj-abv-stat');
+  const projLabel = document.getElementById('d-proj-abv-label');
+  const gravityPoints = getGravityPoints(b);
+  if(!b.fg){
+    const fit = fitFermentationCurve(gravityPoints);
+    if(fit){
+      const projAbv = calcAbv(b.og, fit.Gf);
+      document.getElementById('d-proj-abv').textContent = projAbv !== null ? '~' + projAbv.toFixed(1) + '%' : '—';
+      projLabel.textContent = `Projected Final ABV (est. FG ~${fit.Gf.toFixed(3)})`;
+      projStat.classList.remove('hidden');
+    } else if(gravityPoints.length >= 2){
+      const latest = gravityPoints[gravityPoints.length - 1].value;
+      const projAbv = calcAbv(b.og, latest);
+      if(projAbv !== null){
+        document.getElementById('d-proj-abv').textContent = '~' + projAbv.toFixed(1) + '%';
+        projLabel.textContent = 'ABV So Far (in progress)';
+        projStat.classList.remove('hidden');
+      } else {
+        projStat.classList.add('hidden');
+      }
+    } else {
+      projStat.classList.add('hidden');
+    }
+  } else {
+    projStat.classList.add('hidden');
+  }
+
   renderGravityChart(b);
 
   const table = document.getElementById('d-ing-table');
@@ -925,9 +975,7 @@ function openDetail(id){
   showView('detailView');
 }
 
-function renderGravityChart(b){
-  const section = document.getElementById('d-chart-section');
-  const container = document.getElementById('d-gravity-chart');
+function getGravityPoints(b){
   const points = [];
   if(b.og && !isNaN(parseFloat(b.og)) && b.dateStarted){
     points.push({ date: b.dateStarted, value: parseFloat(b.og) });
@@ -938,6 +986,66 @@ function renderGravityChart(b){
     }
   });
   points.sort((a,c)=> a.date.localeCompare(c.date));
+  return points;
+}
+
+// Converts date-based points into days-since-first-point, for curve fitting and chart x-axis.
+function toSeries(points){
+  const t0 = new Date(points[0].date + 'T00:00:00').getTime();
+  return points.map(p => ({
+    date: p.date,
+    value: p.value,
+    t: (new Date(p.date + 'T00:00:00').getTime() - t0) / 86400000
+  }));
+}
+
+// Fits fermentation as exponential decay toward a terminal gravity: G(t) = Gf + (G0-Gf)*e^(-k*t).
+// Needs OG plus at least 2 later readings (3 points total) to solve for both Gf and k.
+// Returns null if there isn't enough data or the fit doesn't make physical sense.
+function fitFermentationCurve(points){
+  if(points.length < 3) return null;
+  const series = toSeries(points);
+  const G0 = series[0].value;
+  const rest = series.slice(1).filter(p => p.t > 0);
+  if(rest.length < 2) return null;
+
+  let bestK = null, bestGf = null, bestErr = Infinity;
+  for(let k = 0.01; k <= 2.5; k *= 1.07){
+    let sumXY = 0, sumXX = 0;
+    for(const p of rest){
+      const e = Math.exp(-k * p.t);
+      const x = 1 - e;
+      const y = p.value - G0 * e;
+      sumXY += x * y;
+      sumXX += x * x;
+    }
+    if(sumXX < 1e-9) continue;
+    const Gf = sumXY / sumXX;
+    let err = 0;
+    for(const p of rest){
+      const e = Math.exp(-k * p.t);
+      const pred = Gf * (1 - e) + G0 * e;
+      err += (pred - p.value) ** 2;
+    }
+    if(err < bestErr){ bestErr = err; bestK = k; bestGf = Gf; }
+  }
+  if(bestGf === null) return null;
+
+  const latest = rest[rest.length - 1].value;
+  // Projection shouldn't land above the most recent actual reading — gravity only drops.
+  if(bestGf > latest + 0.003) return null;
+  // Meads rarely finish below ~0.985; clamp unrealistic extrapolations.
+  if(bestGf < 0.985) bestGf = 0.985;
+  // Require a meaningful downward trend to bother projecting.
+  if(G0 - bestGf < 0.002) return null;
+
+  return { Gf: bestGf, k: bestK, G0, lastT: rest[rest.length - 1].t };
+}
+
+function renderGravityChart(b){
+  const section = document.getElementById('d-chart-section');
+  const container = document.getElementById('d-gravity-chart');
+  const points = getGravityPoints(b);
 
   if(points.length < 2){
     section.classList.add('hidden');
@@ -946,29 +1054,53 @@ function renderGravityChart(b){
   }
   section.classList.remove('hidden');
 
-  const w = 600, h = 140, pad = 20;
-  const values = points.map(p=>p.value);
-  const min = Math.min(...values), max = Math.max(...values);
+  const series = toSeries(points);
+  const fit = !b.fg ? fitFermentationCurve(points) : null;
+
+  let projSeries = [];
+  if(fit){
+    const startT = series[series.length - 1].t;
+    const horizon = Math.max(startT * 1.6, startT + 10, fit.lastT + 14);
+    const steps = 24;
+    for(let i = 0; i <= steps; i++){
+      const t = startT + (horizon - startT) * (i / steps);
+      const e = Math.exp(-fit.k * t);
+      projSeries.push({ t, value: fit.Gf * (1 - e) + fit.G0 * e });
+    }
+  }
+
+  const allT = series.map(p=>p.t).concat(projSeries.map(p=>p.t));
+  const allV = series.map(p=>p.value).concat(projSeries.map(p=>p.value));
+  const w = 600, h = 150, pad = 24;
+  const tMax = Math.max(...allT, 0.001);
+  const min = Math.min(...allV), max = Math.max(...allV);
   const range = (max - min) || 0.001;
-  const xStep = (w - pad*2) / (points.length - 1);
+  const xOf = t => pad + (t / tMax) * (w - pad*2);
+  const yOf = v => h - pad - ((v - min) / range) * (h - pad*2);
 
-  const coords = points.map((p,i)=>{
-    const x = pad + i * xStep;
-    const y = h - pad - ((p.value - min) / range) * (h - pad*2);
-    return { x, y, ...p };
-  });
+  const linePath = series.map((p,i)=> (i===0?'M':'L') + xOf(p.t).toFixed(1) + ',' + yOf(p.value).toFixed(1)).join(' ');
+  const dots = series.map(p => `<circle cx="${xOf(p.t).toFixed(1)}" cy="${yOf(p.value).toFixed(1)}" r="3.5" fill="var(--honey)" />`).join('');
 
-  const linePath = coords.map((c,i)=> (i===0?'M':'L') + c.x.toFixed(1) + ',' + c.y.toFixed(1)).join(' ');
-  const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="3.5" fill="var(--honey)" />`).join('');
+  let projPathHtml = '', targetHtml = '';
+  if(fit && projSeries.length){
+    const projPath = projSeries.map((p,i)=> (i===0?'M':'L') + xOf(p.t).toFixed(1) + ',' + yOf(p.value).toFixed(1)).join(' ');
+    projPathHtml = `<path d="${projPath}" fill="none" stroke="var(--honey)" stroke-width="1.6" stroke-dasharray="4 4" opacity="0.8" />`;
+    const lastProj = projSeries[projSeries.length - 1];
+    targetHtml = `<circle cx="${xOf(lastProj.t).toFixed(1)}" cy="${yOf(fit.Gf).toFixed(1)}" r="4.5" fill="var(--bg)" stroke="var(--honey)" stroke-width="2" />`;
+  }
 
   container.innerHTML = `
     <svg class="gravity-chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
       <path d="${linePath}" fill="none" stroke="var(--honey-deep)" stroke-width="2" />
+      ${projPathHtml}
       ${dots}
+      ${targetHtml}
     </svg>
     <div class="chart-caption">
       <span>${fmtDate(points[0].date)} · ${points[0].value.toFixed(3)}</span>
-      <span>${fmtDate(points[points.length-1].date)} · ${points[points.length-1].value.toFixed(3)}</span>
+      ${fit
+        ? `<span>Est. landing: ~${fit.Gf.toFixed(3)} SG (dashed)</span>`
+        : `<span>${fmtDate(points[points.length-1].date)} · ${points[points.length-1].value.toFixed(3)}</span>`}
     </div>
   `;
 }
@@ -1006,8 +1138,7 @@ async function addNote(){
   await saveBatches();
   document.getElementById('note-text').value = '';
   document.getElementById('note-gravity').value = '';
-  renderNotes(b);
-  renderGravityChart(b);
+  openDetail(activeBatchId);
 }
 
 async function deleteBatch(){
