@@ -4,7 +4,9 @@ A simple, self-contained mead-brewing logbook. Track recipes, starting gravity, 
 
 **Live page:** https://zoutbot-cpu.github.io/Meadlog/
 **Privacy Policy:** https://zoutbot-cpu.github.io/Meadlog/privacy.html
-[Preview|meadlog-preview.png]
+![Main interface Preview](meadlog-preview.png)
+![Batch Preview](batch-preview.png)
+
 ## Features
 
 - Log each batch's recipe, starting gravity, and ingredient list with amounts
