@@ -19,16 +19,28 @@
   --line:#4a3826;
   --radius:10px;
 }
+html[data-theme="light"]{
+  --bg:#f6ecd9;
+  --surface:#fffaf1;
+  --surface-2:#efe1c1;
+  --text:#2b2015;
+  --text-muted:#7a6a52;
+  --honey:#c9821f;
+  --honey-deep:#a8651a;
+  --berry:#9c3b4c;
+  --line:#ddc99e;
+}
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
 body{
   background:
-    radial-gradient(ellipse at top left, #2a1e14 0%, transparent 55%),
+    radial-gradient(ellipse at top left, var(--surface) 0%, transparent 55%),
     var(--bg);
   color:var(--text);
   font-family:'Inter',sans-serif;
   min-height:100vh;
   padding:32px 20px 80px;
+  transition:background-color .2s ease, color .2s ease;
 }
 .wrap{max-width:900px;margin:0 auto;}
 
@@ -57,6 +69,7 @@ header{
   font-size:0.95rem;
 }
 .hydrometer{ flex-shrink:0; }
+.header-actions{ display:flex; gap:10px; align-items:center; }
 
 button{
   font-family:'Inter',sans-serif;
@@ -422,6 +435,22 @@ table.ing-table td.amt{
 .site-footer a{ color:var(--honey); text-decoration:none; }
 .site-footer a:hover{ color:var(--honey-deep); }
 
+.banner{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:16px;
+  background:var(--surface);
+  border:1px solid var(--honey-deep);
+  border-radius:8px;
+  padding:14px 18px;
+  margin-bottom:24px;
+  font-size:0.88rem;
+  color:var(--text);
+}
+.banner-actions{ display:flex; gap:8px; flex-shrink:0; }
+.banner-actions button{ padding:7px 14px; font-size:0.82rem; white-space:nowrap; }
+
 /* ---------- Mobile ---------- */
 @media (max-width: 640px){
   body{ padding:16px 12px 90px; }
@@ -432,17 +461,23 @@ table.ing-table td.amt{
     gap:14px;
   }
   .title-block h1{ font-size:1.9rem; }
-  header .btn-primary{ width:100%; padding:13px 20px; font-size:0.95rem; }
+  header .header-actions{ width:100%; }
+  header .btn-primary{ flex:1; padding:13px 20px; font-size:0.95rem; }
+  header .header-actions .btn-ghost{ padding:13px 16px; }
 
   .drive-bar{
     flex-direction:column;
     align-items:stretch;
     gap:10px;
   }
-  .drive-actions{ justify-content:stretch; }
-  .drive-actions button{ flex:1; padding:9px 10px; }
+  .drive-actions{ justify-content:stretch; flex-wrap:wrap; }
+  .drive-actions button{ flex:1; min-width:100px; padding:9px 10px; font-size:0.78rem; }
 
   .grid{ grid-template-columns:1fr; }
+
+  .banner{ flex-direction:column; align-items:stretch; text-align:left; }
+  .banner-actions{ width:100%; }
+  .banner-actions button{ flex:1; }
 
   .row2{ grid-template-columns:1fr; gap:0; }
 
@@ -507,7 +542,10 @@ table.ing-table td.amt{
       </h1>
       <p>Recipes, gravity readings, and notes for every batch.</p>
     </div>
-    <button class="btn-primary" id="newBatchBtn">+ New Batch</button>
+    <div class="header-actions">
+      <button class="btn-ghost" id="themeToggleBtn" title="Toggle light/dark theme">🌙</button>
+      <button class="btn-primary" id="newBatchBtn">+ New Batch</button>
+    </div>
   </header>
 
   <div class="drive-bar" id="driveBar">
@@ -517,6 +555,9 @@ table.ing-table td.amt{
     </div>
     <div class="drive-actions">
       <button class="btn-ghost" id="driveConnectBtn">Connect Drive</button>
+      <button class="btn-ghost" id="exportBtn" title="Download your data as a JSON file">⬇ Export</button>
+      <button class="btn-ghost" id="importBtn" title="Restore from a previously exported JSON file">⬆ Import</button>
+      <input type="file" id="importFile" accept="application/json" hidden>
       <button class="btn-ghost" id="driveSettingsBtn" title="Client ID settings">⚙</button>
     </div>
   </div>
@@ -529,6 +570,14 @@ table.ing-table td.amt{
     <div class="form-actions" style="margin-top:0;padding-top:0;border-top:none;">
       <button class="btn-primary" id="saveClientIdBtn">Save</button>
       <button class="btn-ghost" id="closeSettingsBtn">Close</button>
+    </div>
+  </div>
+
+  <div class="banner hidden" id="backupReminder">
+    <span>You've logged a few batches but never exported a backup. Data stored only in this browser can be lost if it's cleared.</span>
+    <div class="banner-actions">
+      <button class="btn-primary" id="backupReminderExportBtn">Export now</button>
+      <button class="btn-ghost" id="backupReminderDismissBtn">Dismiss</button>
     </div>
   </div>
 
@@ -601,6 +650,7 @@ table.ing-table td.amt{
       <button class="btn-ghost" id="detailBackBtn">&larr; Back</button>
       <div>
         <button class="btn-ghost" id="editBatchBtn">Edit</button>
+        <button class="btn-ghost" id="duplicateBatchBtn">Duplicate</button>
         <button class="btn-danger" id="deleteBatchBtn">Delete batch</button>
       </div>
     </div>
@@ -757,6 +807,7 @@ function renderList(){
   const grid = document.getElementById('grid');
   const empty = document.getElementById('emptyState');
   grid.innerHTML = '';
+  checkBackupReminder();
   if(batches.length === 0){
     empty.classList.remove('hidden');
     return;
@@ -1166,6 +1217,26 @@ async function deleteBatch(){
   showView('listView');
 }
 
+async function duplicateBatch(){
+  const b = batches.find(x=>x.id===activeBatchId);
+  if(!b) return;
+  const newBatch = {
+    id: uid(),
+    name: (b.name || 'Untitled batch') + ' (copy)',
+    recipe: b.recipe || '',
+    dateStarted: todayStr(),
+    og: '',
+    fg: '',
+    status: 'Fermenting',
+    ingredients: (b.ingredients || []).map(ing => ({...ing})),
+    notes: []
+  };
+  batches.push(newBatch);
+  await saveBatches();
+  showToast('Duplicated — set your new starting gravity');
+  openEditForm(newBatch.id);
+}
+
 /* ---------- Google Drive sync ---------- */
 const DEFAULT_CLIENT_ID = '914534684567-evs399rpob4t11b00kt3921atr0a2rcu.apps.googleusercontent.com';
 const DRIVE_FILE_NAME = 'mead-log-data.json';
@@ -1338,6 +1409,103 @@ document.getElementById('saveClientIdBtn').addEventListener('click', ()=>{
   alert('Client ID saved.');
 });
 
+function exportData(){
+  if(batches.length === 0){
+    alert('No batches to export yet.');
+    return;
+  }
+  const dateStr = todayStr();
+  const blob = new Blob([JSON.stringify(batches, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `mead-log-export-${dateStr}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  localStorage.setItem('mead-has-exported', 'true');
+  hideBackupReminder();
+  showToast('Exported ' + batches.length + ' batch' + (batches.length === 1 ? '' : 'es'));
+}
+document.getElementById('exportBtn').addEventListener('click', exportData);
+
+function isValidBatch(b){
+  return b && typeof b === 'object' && typeof b.name === 'string';
+}
+
+async function importData(file){
+  let imported;
+  try{
+    const text = await file.text();
+    imported = JSON.parse(text);
+  }catch(e){
+    alert('Could not read that file — make sure it\'s a JSON export from this app.');
+    return;
+  }
+  if(!Array.isArray(imported) || !imported.every(isValidBatch)){
+    alert('That file doesn\'t look like a Mead Log export.');
+    return;
+  }
+  if(imported.length === 0){
+    alert('That file has no batches in it.');
+    return;
+  }
+  if(!confirm(`Import ${imported.length} batch${imported.length===1?'':'es'}? This adds them to your existing batches — anything already here with a matching ID will be skipped, nothing gets overwritten.`)){
+    return;
+  }
+  const existingIds = new Set(batches.map(b=>b.id));
+  let added = 0, skipped = 0;
+  imported.forEach(b=>{
+    if(existingIds.has(b.id)){
+      skipped++;
+    } else {
+      batches.push(b);
+      existingIds.add(b.id);
+      added++;
+    }
+  });
+  await saveBatches();
+  renderList();
+  showToast(`Imported ${added} batch${added===1?'':'es'}` + (skipped ? `, skipped ${skipped} already present` : ''));
+}
+document.getElementById('importBtn').addEventListener('click', ()=>{
+  document.getElementById('importFile').click();
+});
+document.getElementById('importFile').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(file) importData(file);
+  e.target.value = '';
+});
+
+function checkBackupReminder(){
+  const banner = document.getElementById('backupReminder');
+  const hasExported = localStorage.getItem('mead-has-exported') === 'true';
+  const dismissed = localStorage.getItem('mead-backup-reminder-dismissed') === 'true';
+  const shouldShow = batches.length >= 3 && !hasExported && !dismissed;
+  banner.classList.toggle('hidden', !shouldShow);
+}
+function hideBackupReminder(){
+  document.getElementById('backupReminder').classList.add('hidden');
+}
+document.getElementById('backupReminderExportBtn').addEventListener('click', exportData);
+document.getElementById('backupReminderDismissBtn').addEventListener('click', ()=>{
+  localStorage.setItem('mead-backup-reminder-dismissed', 'true');
+  hideBackupReminder();
+});
+
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  document.getElementById('themeToggleBtn').textContent = theme === 'light' ? '🌙' : '☀️';
+  localStorage.setItem('mead-theme', theme);
+}
+function toggleTheme(){
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(current === 'dark' ? 'light' : 'dark');
+}
+document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
+applyTheme(localStorage.getItem('mead-theme') || 'dark');
+
 /* ---------- wiring ---------- */
 document.getElementById('newBatchBtn').addEventListener('click', openNewForm);
 document.getElementById('formBackBtn').addEventListener('click', ()=>showView('listView'));
@@ -1350,6 +1518,7 @@ document.getElementById('saveBatchBtn').addEventListener('click', saveBatch);
 document.getElementById('detailBackBtn').addEventListener('click', ()=>showView('listView'));
 document.getElementById('editBatchBtn').addEventListener('click', ()=>openEditForm(activeBatchId));
 document.getElementById('deleteBatchBtn').addEventListener('click', deleteBatch);
+document.getElementById('duplicateBatchBtn').addEventListener('click', duplicateBatch);
 document.getElementById('addNoteBtn').addEventListener('click', addNote);
 
 loadBatches();
