@@ -410,6 +410,18 @@ table.ing-table td.amt{
   transform:translateX(-50%) translateY(0);
 }
 
+.site-footer{
+  margin-top:48px;
+  padding-top:20px;
+  border-top:1px solid var(--line);
+  text-align:center;
+  color:var(--text-muted);
+  font-size:0.82rem;
+  line-height:1.6;
+}
+.site-footer a{ color:var(--honey); text-decoration:none; }
+.site-footer a:hover{ color:var(--honey-deep); }
+
 /* ---------- Mobile ---------- */
 @media (max-width: 640px){
   body{ padding:16px 12px 90px; }
@@ -652,6 +664,11 @@ table.ing-table td.amt{
       </section>
     </div>
   </div>
+
+  <footer class="site-footer">
+    <p>Mead Log is a personal mead-brewing logbook — track recipes, starting gravity, ingredients, and dated notes for every batch, right in your browser. Optionally sync your data to your own Google Drive.</p>
+    <p><a href="./privacy.html">Privacy Policy</a> · <a href="https://github.com/zoutbot-cpu/Meadlog" target="_blank" rel="noopener">Source on GitHub</a></p>
+  </footer>
 
 </div>
 
