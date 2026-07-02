@@ -1268,15 +1268,18 @@ function loadGisScript(){
   });
 }
 
-async function connectDrive(){
+async function connectDrive(opts={}){
+  const silent = opts.silent === true;
   const clientId = getClientId();
   if(!clientId){
-    document.getElementById('driveSettingsPanel').hidden = false;
-    alert('Add your Google OAuth Client ID first.');
+    if(!silent){
+      document.getElementById('driveSettingsPanel').hidden = false;
+      alert('Add your Google OAuth Client ID first.');
+    }
     return;
   }
   try{
-    setDriveStatus('syncing', 'Connecting…');
+    if(!silent) setDriveStatus('syncing', 'Connecting…');
     await loadGisScript();
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: clientId,
@@ -1284,10 +1287,11 @@ async function connectDrive(){
       callback: async (resp) => {
         if(resp.error){
           setDriveStatus('', 'Not connected to Google Drive');
-          alert('Google sign-in failed: ' + resp.error);
+          if(!silent) alert('Google sign-in failed: ' + resp.error);
           return;
         }
         accessToken = resp.access_token;
+        localStorage.setItem('mead-drive-was-connected', 'true');
         document.getElementById('driveConnectBtn').textContent = 'Disconnect';
         setDriveStatus('syncing', 'Syncing…');
         await syncFromDrive();
@@ -1298,12 +1302,13 @@ async function connectDrive(){
   }catch(e){
     console.error(e);
     setDriveStatus('', 'Not connected to Google Drive');
-    alert('Could not reach Google sign-in. Check your internet connection.');
+    if(!silent) alert('Could not reach Google sign-in. Check your internet connection.');
   }
 }
 
 function disconnectDrive(){
   accessToken = null;
+  localStorage.removeItem('mead-drive-was-connected');
   document.getElementById('driveConnectBtn').textContent = 'Connect Drive';
   setDriveStatus('', 'Not connected to Google Drive');
 }
@@ -1522,6 +1527,9 @@ document.getElementById('duplicateBatchBtn').addEventListener('click', duplicate
 document.getElementById('addNoteBtn').addEventListener('click', addNote);
 
 loadBatches();
+if(localStorage.getItem('mead-drive-was-connected') === 'true'){
+  connectDrive({ silent: true });
+}
 </script>
 </body>
 </html>
